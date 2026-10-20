@@ -1,11 +1,14 @@
+print("=== APP IS STARTING ===")
 import json
 import os
+print("Imported basic modules")
 
 import cv2
 import gradio as gr
 import numpy as np
 import timm
 import torch
+print("Imported torch successfully")
 from PIL import Image, ImageOps
 from torchvision import transforms
 
