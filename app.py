@@ -24,9 +24,24 @@ def load_model(weights, classes_json):
     m.eval()
     return m, names
 
+print("Starting script and loading models...")
 
-model1, names1 = load_model("m1_tomato.pth", "m1_classes.json")          # Non_tomato / Tomato
-model2, names2 = load_model("m2_late_blight.pth", "m2_classes.json")     # Late_blight / Not_late_blight
+try:
+    print("Loading model 1...")
+    model1, names1 = load_model("m1_tomato.pth", "m1_classes.json")
+    print("Model 1 loaded successfully!")
+except Exception as e:
+    print(f"Error loading model 1: {e}")
+
+try:
+    print("Loading model 2...")
+    model2, names2 = load_model("m2_late_blight.pth", "m2_classes.json")
+    print("Model 2 loaded successfully!")
+except Exception as e:
+    print(f"Error loading model 2: {e}")
+
+#model1, names1 = load_model("m1_tomato.pth", "m1_classes.json")          # Non_tomato / Tomato
+#model2, names2 = load_model("m2_late_blight.pth", "m2_classes.json")     # Late_blight / Not_late_blight
 
 tf = transforms.Compose([
     transforms.Resize((224, 224)),
