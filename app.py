@@ -156,5 +156,7 @@ with gr.Blocks(title="Tomato Leaf Disease Diagnosis") as demo:
     btn.click(diagnose, inputs=[image_input],
               outputs=[label_output, ratio_output, advice_output, leaf_output, lesion_output])
 
-demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
-#demo.launch(share=True)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 7860))
+    print(f"Starting app on port {port}...")
+    demo.launch(server_name="0.0.0.0", server_port=port)
