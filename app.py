@@ -328,9 +328,11 @@ with gr.Blocks(title="Tomato Disease Report") as demo:
             display: flex !important;
             justify-content: space-between !important;
             font-size: 12px !important;
-            color: #333333 !important;
             margin-top: 4px !important;
             font-weight: bold !important;
+        }
+        .slider-labels span {
+            color: #333333 !important;
         }
         .treatment-section {
             border-top: 1px solid #dcd6cd !important;
