@@ -10,10 +10,10 @@ from PIL import Image, ImageOps
 from torchvision import transforms
 
 MODEL_NAME = "mobilenetv4_conv_small.e2400_r224_in1k"
-MAX_SIDE = 1024        # Resize image if the longest side exceeds this value
-MIN_CONF = 0.60        # Minimum confidence threshold
-MAX_LEAVES = 3         # Maximum number of leaf regions to crop
-MIN_LEAF_FRAC = 0.05   # Minimum fraction of the image area for a leaf region
+MAX_SIDE = 1024        
+MIN_CONF = 0.60        
+MAX_LEAVES = 3         
+MIN_LEAF_FRAC = 0.05   
 
 device = torch.device("cpu")
 
@@ -104,12 +104,10 @@ def calc_infection_ratio(img_rgb):
 
     h, w = img_rgb.shape[:2]
 
-    # Leaf Mask Visualization (Green outline for leaf area)
     leaf_vis = img_rgb.copy()
     contours = cv2.findContours(leaf_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
     cv2.drawContours(leaf_vis, contours, -1, (0, 255, 0), max(2, w // 300))
 
-    # Lesion Mask Visualization (Red overlay)
     lesion_vis = img_rgb.copy()
     m = lesion > 0
     lesion_vis[m] = (0.4 * lesion_vis[m] + 0.6 * np.array([255, 0, 0])).astype(np.uint8)
@@ -151,17 +149,14 @@ def analyze(img_pil, use_crop=True):
 
 
 # ---------- Render Custom Style Report Card (HTML) ----------
-def render_custom_style(ratio, msg):
-    r_val = max(0.0, min(100.0, ratio))
+def render_custom_style(diagnosis_status, ratio=None, msg=""):
+    r_val = max(0.0, min(100.0, ratio)) if ratio is not None else 0.0
     
-    html_content = f"""
-    <div class="custom-report-card">
-        <div class="score-header">
+    slider_html = f"""
+        <div class="score-header" style="margin-top: 15px; font-size: 18px;">
             <span class="score-title">SEVERITY SCORE:</span> 
             <span class="score-bracket">[</span><span class="score-value">{r_val:.1f}%</span><span class="score-bracket">]</span>
         </div>
-        
-        <!-- Three-color Progress Bar with Dynamic Pointer -->
         <div class="slider-container">
             <div class="color-bar">
                 <div class="bar-low"></div>
@@ -175,9 +170,19 @@ def render_custom_style(ratio, msg):
                 <span>High (45-100%)</span>
             </div>
         </div>
+    """ if diagnosis_status == "tomato-with-late-blight" else ""
+
+    html_content = f"""
+    <div class="custom-report-card">
+        <div class="score-header">
+            <span class="score-title">DIAGNOSIS STATUS:</span> 
+            <span class="score-bracket">[</span><span class="score-value" style="font-size: 20px;">{diagnosis_status}</span><span class="score-bracket">]</span>
+        </div>
+        
+        {slider_html}
 
         <div class="treatment-section">
-            <div class="treatment-title">RECOMMENDED TREATMENT:</div>
+            <div class="treatment-title">RECOMMENDED ACTION:</div>
             <div class="treatment-text">{msg}</div>
         </div>
     </div>
@@ -199,34 +204,44 @@ def diagnose(image_path, use_crop):
     except Exception:
         return None, "❌ Unable to read the image. Please try another one.", None, None, None
 
+    arr = np.array(img)
     r = analyze(img, use_crop)
     chosen, label = r["chosen"], r["label"]
     conf, top_conf = chosen["conf"], chosen["top_conf"]
-    boxes_vis = draw_boxes(r["arr"], r["regions"]) if r["regions"] else None
+    boxes_vis = draw_boxes(arr, r["regions"]) if r["regions"] else None
     note = f" (Checked {r['n_crops']} leaf region(s))" if r["regions"] else " (Whole photo)"
 
     if label == "Not_sure":
-        html_out = render_custom_style(0, f"Uncertain prediction (Best guess: {chosen['top']}, {top_conf*100:.1f}%). Please upload a clearer close-up of a single leaf.")
-        return None, html_out, boxes_vis, None, conf
+        status = "Uncertain Identification"
+        msg = f"Uncertain prediction (Best guess: {chosen['top']}, Confidence {top_conf*100:.1f}%). Please upload a clearer close-up."
+        html_out = render_custom_style(status, msg=msg)
+        return arr, html_out, boxes_vis, None, conf
 
+    # Category 1: non-tomato
     if label == "Non_tomato":
-        html_out = render_custom_style(0, f"This does not look like a tomato leaf. Please photograph a tomato leaf.{note}")
-        return None, html_out, boxes_vis, None, conf
+        status = "non-tomato"
+        msg = f"🚫 This does not look like a tomato leaf. Please photograph a valid tomato leaf.{note}"
+        html_out = render_custom_style(status, msg=msg)
+        return arr, html_out, boxes_vis, None, conf
 
+    # Category 2: tomato-without-late-blight
     if label == "Not_late_blight":
-        html_out = render_custom_style(0, f"Confirmed tomato leaf, **no late blight detected** (Confidence {top_conf*100:.1f}%).{note}")
-        return None, html_out, boxes_vis, None, conf
+        status = "tomato-without-late-blight"
+        msg = f"✅ Confirmed tomato leaf, **no late blight detected** (Confidence {top_conf*100:.1f}%). The leaf is healthy. Maintain good ventilation and monitor regularly.{note}"
+        html_out = render_custom_style(status, msg=msg)
+        return arr, html_out, boxes_vis, None, conf
 
-    # Late_blight: Calculate infection ratio
+    # Category 3: tomato-with-late-blight
+    status = "tomato-with-late-blight"
     ratio, leaf_vis, lesion_vis = calc_infection_ratio(chosen["crop"])
     if ratio < 15:
-        msg = f"Mild late blight. Remove infected leaves promptly and apply an organic copper fungicide."
+        msg = f"Mild late blight. Remove infected leaves promptly and apply an organic copper fungicide.{note}"
     elif ratio < 45:
-        msg = f"Moderate late blight. Isolate the plant and use a systemic fungicide to limit spread."
+        msg = f"Moderate late blight. Isolate the plant, remove infected foliage, and use a systemic fungicide to limit spread.{note}"
     else:
-        msg = f"🚨 Severe late blight! Remove and destroy the plant immediately to prevent spore transmission."
+        msg = f"🚨 Severe late blight! Remove and destroy the plant immediately to prevent spore transmission.{note}"
     
-    html_out = render_custom_style(ratio, msg + note)
+    html_out = render_custom_style(status, ratio=ratio, msg=msg)
     return lesion_vis, html_out, boxes_vis, leaf_vis, conf
 
 
@@ -242,13 +257,10 @@ with gr.Blocks(title="Tomato Disease Report") as demo:
             btn = gr.Button("🔍 Diagnose", variant="primary", elem_id="diag_btn")
 
         with gr.Column(scale=1):
-            # Primary analyzed image showing lesion mask overlay
-            image_output = gr.Image(label="Analyzed Image (Lesion View)", interactive=False)
+            image_output = gr.Image(label="Analyzed Image", interactive=False)
 
-    # Custom Style Report Card (Severity Score & Treatment)
     report_output = gr.HTML(label="Diagnostic Report")
 
-    # 🔬 Expert View / Masks Accordion (Retained for detailed inspection)
     with gr.Accordion("🔬 Expert View: Detailed Analysis & Masks", open=False):
         gr.Markdown("Computer vision segmentation details for experts or advanced users:")
         with gr.Row():
@@ -257,83 +269,84 @@ with gr.Blocks(title="Tomato Disease Report") as demo:
 
     conf_hidden = gr.Label(visible=False)
 
-    # Bind button click event
     btn.click(diagnose, inputs=[image_input, use_crop_hidden],
               outputs=[image_output, report_output, boxes_output, leaf_output, conf_hidden])
 
-    # Custom CSS with visible text fix
     gr.HTML("""
     <style>
         .custom-report-card {
-            background-color: #f4f1ea;
-            border: 2px solid #dcd6cd;
-            border-radius: 12px;
-            padding: 20px;
-            font-family: Arial, sans-serif;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            margin-top: 15px;
+            background-color: #f4f1ea !important;
+            border: 2px solid #dcd6cd !important;
+            border-radius: 12px !important;
+            padding: 20px !important;
+            font-family: Arial, sans-serif !important;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
+            margin-top: 15px !important;
             color: #2c2c2c !important;
         }
         .score-header {
-            font-size: 20px;
-            font-weight: bold;
+            font-size: 18px !important;
+            font-weight: bold !important;
             color: #2c2c2c !important;
-            margin-bottom: 10px;
+            margin-bottom: 8px !important;
+        }
+        .score-title {
+            color: #2c2c2c !important;
         }
         .score-bracket {
             color: #a93226 !important;
-            font-weight: bold;
+            font-weight: bold !important;
         }
         .score-value {
             color: #a93226 !important;
-            font-weight: bold;
-            font-size: 24px;
+            font-weight: bold !important;
+            font-size: 22px !important;
         }
         .slider-container {
-            position: relative;
-            margin: 20px 0 35px 0;
+            position: relative !important;
+            margin: 15px 0 30px 0 !important;
         }
         .color-bar {
-            display: flex;
-            height: 10px;
-            border-radius: 5px;
-            overflow: hidden;
-            border: 1px solid #b5b0a5;
+            display: flex !important;
+            height: 10px !important;
+            border-radius: 5px !important;
+            overflow: hidden !important;
+            border: 1px solid #b5b0a5 !important;
         }
-        .bar-low { background-color: #27ae60; flex: 15; }
-        .bar-med { background-color: #f39c12; flex: 30; }
-        .bar-high { background-color: #c0392b; flex: 55; }
+        .bar-low { background-color: #27ae60 !important; flex: 15; }
+        .bar-med { background-color: #f39c12 !important; flex: 30; }
+        .bar-high { background-color: #c0392b !important; flex: 55; }
         .pointer {
-            position: absolute;
-            top: 8px;
-            transform: translateX(-50%);
+            position: absolute !important;
+            top: 8px !important;
+            transform: translateX(-50%) !important;
             color: #111 !important;
-            font-size: 14px;
-            font-weight: bold;
+            font-size: 14px !important;
+            font-weight: bold !important;
         }
         .slider-labels {
-            display: flex;
-            justify-content: space-between;
-            font-size: 12px;
-            color: #555 !important;
-            margin-top: 4px;
-            font-weight: bold;
+            display: flex !important;
+            justify-content: space-between !important;
+            font-size: 12px !important;
+            color: #333333 !important;
+            margin-top: 4px !important;
+            font-weight: bold !important;
         }
         .treatment-section {
-            border-top: 1px solid #dcd6cd;
-            padding-top: 12px;
-            margin-top: 15px;
+            border-top: 1px solid #dcd6cd !important;
+            padding-top: 12px !important;
+            margin-top: 15px !important;
         }
         .treatment-title {
-            font-weight: bold;
+            font-weight: bold !important;
             color: #2c2c2c !important;
-            font-size: 14px;
-            margin-bottom: 6px;
+            font-size: 14px !important;
+            margin-bottom: 6px !important;
         }
         .treatment-text {
-            color: #333333 !important;
-            font-size: 15px;
-            line-height: 1.4;
+            color: #2c2c2c !important;
+            font-size: 15px !important;
+            line-height: 1.4 !important;
         }
         #diag_btn {
             background-color: #2c2c2c !important;
