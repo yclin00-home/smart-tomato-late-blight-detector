@@ -313,9 +313,9 @@ with gr.Blocks(title="Tomato Disease Report") as demo:
             overflow: hidden !important;
             border: 1px solid #b5b0a5 !important;
         }
-        .bar-low { background-color: #27ae60 !important; flex: 15; }
-        .bar-med { background-color: #f39c12 !important; flex: 30; }
-        .bar-high { background-color: #c0392b !important; flex: 55; }
+        .bar-low { background-color: #27ae60 !important; flex: 1; }
+        .bar-med { background-color: #f39c12 !important; flex: 1; }
+        .bar-high { background-color: #c0392b !important; flex: 1; }
         .pointer {
             position: absolute !important;
             top: 8px !important;
