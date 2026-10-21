@@ -247,8 +247,9 @@ def diagnose(image_path, use_crop):
 
 # ---------- Gradio Blocks UI ----------
 with gr.Blocks(title="Tomato Disease Report") as demo:
-    gr.Markdown("# 🍅 Tomato Leaf Disease Diagnosis")
-    gr.Markdown("Take or upload a photo of a tomato leaf, then click **Diagnose** to view the professional report.")
+    gr.Markdown("# 🍅 Tomato Leaf Disease Diagnosis 🍅 #")
+    gr.Markdown("Designed by Bo-Ruei Lin @2026")
+    gr.Markdown("To Start: Take or upload a photo of a tomato leaf, then click **Diagnose** to view the professional report.")
 
     with gr.Row():
         with gr.Column(scale=1):
