@@ -80,7 +80,6 @@ def draw_boxes(img_rgb, regions):
     vis = img_rgb.copy()
     t = max(2, img_rgb.shape[1] // 300)
     for k, (x0, y0, x1, y1, _) in enumerate(regions, 1):
-        # 紅色框線 (BGR: 0, 0, 255)
         cv2.rectangle(vis, (x0, y0), (x1, y1), (0, 0, 255), t)
         cv2.putText(vis, str(k), (x0 + 8, y0 + 38), cv2.FONT_HERSHEY_SIMPLEX,
                     1.2, (0, 0, 255), 3, cv2.LINE_AA)
@@ -280,8 +279,7 @@ def diagnose(image_path, use_crop):
 
 # ---------- Gradio Blocks UI ----------
 with gr.Blocks(title="Tomato Disease Report") as demo:
-    gr.Markdown("# 🍅 Tomato Leaf Disease Diagnosis 🍅 #")
-    gr.Markdown("Designed by Bo-Ruei Lin @2026")
+    gr.Markdown("# 🍅 Tomato Leaf Disease Diagnosis")
     gr.Markdown("Take or upload a photo of a tomato leaf, then click **Diagnose** to view the professional report.")
 
     with gr.Row():
@@ -308,6 +306,10 @@ with gr.Blocks(title="Tomato Disease Report") as demo:
 
     gr.HTML("""
     <style>
+        /* 強制修正 Gradio 深色模式對自訂卡片文字顏色的影響 */
+        .custom-report-card, .custom-report-card * {
+            color: #2c2c2c !important;
+        }
         .custom-report-card {
             background-color: #f4f1ea !important;
             border: 2px solid #dcd6cd !important;
@@ -316,16 +318,11 @@ with gr.Blocks(title="Tomato Disease Report") as demo:
             font-family: Arial, sans-serif !important;
             box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
             margin-top: 15px !important;
-            color: #2c2c2c !important;
         }
         .score-header {
             font-size: 18px !important;
             font-weight: bold !important;
-            color: #2c2c2c !important;
             margin-bottom: 8px !important;
-        }
-        .score-title {
-            color: #2c2c2c !important;
         }
         .score-bracket {
             color: #a93226 !important;
@@ -363,7 +360,6 @@ with gr.Blocks(title="Tomato Disease Report") as demo:
             margin-top: 8px !important;
             font-size: 14px !important;
             font-weight: bold !important;
-            color: #2c2c2c !important;
         }
         .label-low { text-align: left; }
         .label-med { text-align: center; }
