@@ -11,7 +11,7 @@ from torchvision import transforms
 
 MODEL_NAME = "mobilenetv4_conv_small.e2400_r224_in1k"
 MAX_SIDE = 1024         
-MIN_CONF = 0.8         
+MIN_CONF = 0.60         
 MAX_LEAVES = 10         
 MIN_LEAF_FRAC = 0.02    
 
@@ -27,7 +27,6 @@ def load_model(weights, classes_json):
     return m, names
 
 
-# 載入剛剛訓練好的新模型權重與類別設定
 model1, names1 = load_model("m1_tomato.pth", "m1_classes.json")      # Non_tomato / Tomato
 model2, names2 = load_model("m2_late_blight.pth", "m2_classes.json")      # Late_blight / Not_late_blight
 
@@ -247,7 +246,6 @@ def diagnose(image_path, use_crop):
     label = r["label"]
     chosen = r["chosen"]
 
-    # 即使是 Non_tomato，只要有偵測到葉片，也正常產生 Leaf Mask
     leaf_vis = calc_infection_ratio(chosen["crop"])[1] if chosen is not None else None
 
     if label == "Non_tomato":
@@ -368,7 +366,7 @@ with gr.Blocks(title="Tomato Disease Report") as demo:
         .label-high { text-align: right; }
     </style>
     """)
-
+    
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
     demo.launch(server_name="0.0.0.0", server_port=port, share=False)
