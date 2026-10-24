@@ -113,7 +113,7 @@ def calc_infection_ratio(img_rgb):
 
 
 # ==========================================
-# 網頁報告排版 (HTML/CSS)
+# 網頁報告排版 (HTML/CSS - 改為向上指標 ▲)
 # ==========================================
 def render_custom_style(diagnosis_status, ratio=None, msg=""):
     r_val = max(0.0, min(100.0, ratio)) if ratio is not None else 0.0
@@ -124,16 +124,16 @@ def render_custom_style(diagnosis_status, ratio=None, msg=""):
             <span class="score-bracket">[</span><span class="score-value">{r_val:.1f}%</span><span class="score-bracket">]</span>
         </div>
         <div class="slider-container">
-            <div class="color-bar">
-                <div class="bar-low"></div>
-                <div class="bar-med"></div>
-                <div class="bar-high"></div>
-            </div>
-            <div class="pointer" style="left: {r_val}%;">▼</div>
             <div class="slider-labels-grid">
                 <span class="label-low">Low (0-33%)</span>
                 <span class="label-med">Medium (33-66%)</span>
                 <span class="label-high">High (66-100%)</span>
+            </div>
+            <div class="pointer-up" style="left: {r_val}%;">▲</div>
+            <div class="color-bar">
+                <div class="bar-low"></div>
+                <div class="bar-med"></div>
+                <div class="bar-high"></div>
             </div>
         </div>
     """ if diagnosis_status == "tomato-with-late-blight" else ""
@@ -235,6 +235,7 @@ def diagnose(image_path):
         html_out = render_custom_style(status, msg=msg)
         return arr, html_out, boxes_vis, None
 
+    ratio, _, lesion_vis = calc_infection_ratio(chosen["crop"])
     leaf_vis = calc_infection_ratio(chosen["crop"])[1]
 
     if label == "Not_late_blight":
@@ -245,7 +246,6 @@ def diagnose(image_path):
         return arr, html_out, boxes_vis, leaf_vis
 
     status = "tomato-with-late-blight"
-    ratio, _, lesion_vis = calc_infection_ratio(chosen["crop"])
     if ratio < 33.3:
         msg = f"Mild late blight. Remove infected leaves promptly and apply an organic copper fungicide.{note}"
     elif ratio < 66.6:
@@ -313,7 +313,24 @@ with gr.Blocks(title="Tomato Disease Report") as demo:
         }
         .slider-container {
             position: relative !important;
-            margin: 15px 0 45px 0 !important;
+            margin: 25px 0 15px 0 !important;
+        }
+        .slider-labels-grid {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr 1fr !important;
+            margin-bottom: 5px !important;
+            font-size: 14px !important;
+            font-weight: bold !important;
+        }
+        .label-low { text-align: left; }
+        .label-med { text-align: center; }
+        .label-high { text-align: right; }
+        .pointer-up {
+            position: absolute !important;
+            top: 18px !important;
+            font-size: 16px !important;
+            color: #000000 !important;
+            transform: translateX(-50%);
         }
         .color-bar {
             display: flex !important;
@@ -321,31 +338,14 @@ with gr.Blocks(title="Tomato Disease Report") as demo:
             border-radius: 6px !important;
             overflow: hidden !important;
             border: 1.5px solid #b5b0a5 !important;
+            margin-top: 5px !important;
         }
         .bar-low { background-color: #27ae60 !important; flex: 1; }
         .bar-med { background-color: #f39c12 !important; flex: 1; }
         .bar-high { background-color: #c0392b !important; flex: 1; }
-        .pointer {
-            position: absolute !important;
-            top: 24px !important;
-            font-size: 16px !important;
-            color: #000000 !important;
-            transform: translateX(-50%);
-        }
-        .slider-labels-grid {
-            display: grid !important;
-            grid-template-columns: 1fr 1fr 1fr !important;
-            margin-top: 8px !important;
-            font-size: 14px !important;
-            font-weight: bold !important;
-        }
-        .label-low { text-align: left; }
-        .label-med { text-align: center; }
-        .label-high { text-align: right; }
     </style>
     """)
 
 if __name__ == "__main__":
-    # 支援 Render 平台的 port 與 0.0.0.0 綁定
     port = int(os.environ.get("PORT", 7860))
     demo.launch(server_name="0.0.0.0", server_port=port)
