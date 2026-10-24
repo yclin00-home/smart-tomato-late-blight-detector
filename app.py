@@ -262,6 +262,7 @@ def diagnose(image_path):
 # ==========================================
 with gr.Blocks(title="Tomato Disease Report") as demo:
     gr.Markdown("# 🍅 Tomato Leaf Disease Diagnosis")
+    gr.Markdown("Designed by Bo Ruei Lin")
     gr.Markdown("Take or upload a photo of a tomato leaf, then click **Diagnose** to view the professional report.")
 
     with gr.Row():
