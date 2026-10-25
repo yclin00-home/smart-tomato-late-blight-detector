@@ -11,12 +11,13 @@ import gradio as gr
 # Parameters & Model Inference Configuration
 # ==========================================
 MODEL_NAME = "mobilenetv4_conv_small.e2400_r224_in1k"
-MAX_SIDE = 1024         # Maximum image dimension constraint for fast processing
+MAX_SIDE = 1024         # Internal processing max size constraint
+MAX_INPUT_SIDE = 800    # 🚨 [OOM Protection] Initial max side limit for uploaded images to prevent out-of-memory crashes
 MIN_CONF = 0.60         # Confidence threshold for tomato classification stage 1
 MAX_LEAVES = 10         # Maximum number of leaf regions to inspect per image
 MIN_LEAF_FRAC = 0.015   # Minimum area ratio for detected leaves
 
-# Set device for inference (CPU by default on Render servers)
+# Inference device setup (automatically uses GPU if available, falls back to CPU on Render)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"💻 Inference Device: {device}")
 
@@ -25,7 +26,7 @@ def load_model(weights, classes_json):
     Loads model weights and class labels, initializes the architecture, and sets it to evaluation mode.
     """
     if not os.path.exists(weights) or not os.path.exists(classes_json):
-        raise FileNotFoundError(f"Model weights {weights} or classes file {classes_json} not found! Please upload them.")
+        raise FileNotFoundError(f"Model weights {weights} or classes file {classes_json} not found! Please ensure they are uploaded.")
     with open(classes_json, "r", encoding="utf-8") as f:
         names = json.load(f)
     m = timm.create_model(MODEL_NAME, pretrained=False, num_classes=len(names))
@@ -33,11 +34,11 @@ def load_model(weights, classes_json):
     m.eval()
     return m, names
 
-# Load hierarchical trained models and class labels
+# Load trained dual models and class labels
 model1, names1 = load_model("m1_tomato.pth", "m1_classes.json")
 model2, names2 = load_model("m2_late_blight.pth", "m2_classes.json")
 
-# Validation/Inference image preprocessing pipeline
+# Image preprocessing pipeline for inference
 tf = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
@@ -174,11 +175,11 @@ def render_custom_style(diagnosis_status, ratio=None, msg=""):
 
 
 # ==========================================
-# Core Diagnostic Inference Workflow
+# Core Diagnostic Inference Workflow (with OOM Protection)
 # ==========================================
 def diagnose(image_path):
     """
-    Executes end-to-end inference: loads and validates image, detects leaf regions,
+    Executes end-to-end inference: loads, resizes for memory safety, detects leaf regions,
     passes crops through hierarchical models (M1 & M2), computes infection ratio, and returns visual results.
     """
     if image_path is None:
@@ -187,7 +188,10 @@ def diagnose(image_path):
     try:
         img = Image.open(image_path)
         img = ImageOps.exif_transpose(img)
-        img.thumbnail((MAX_SIDE, MAX_SIDE))
+        
+        # 🚨 [OOM Protection] Downscale input image immediately to MAX_INPUT_SIDE to prevent memory crashes
+        img.thumbnail((MAX_INPUT_SIDE, MAX_INPUT_SIDE))
+        
         arr = np.array(img.convert("RGB"))
     except Exception:
         return None, "❌ Unable to read the image. Please try another one.", None, None
@@ -258,7 +262,8 @@ def diagnose(image_path):
         html_out = render_custom_style(status, msg=msg)
         return arr, html_out, boxes_vis, None
 
-    ratio, leaf_vis, lesion_vis = calc_infection_ratio(chosen["crop"])
+    ratio, _, lesion_vis = calc_infection_ratio(chosen["crop"])
+    leaf_vis = calc_infection_ratio(chosen["crop"])[1]
 
     if label == "Not_late_blight":
         status = "tomato-without-late-blight"
@@ -284,6 +289,7 @@ def diagnose(image_path):
 # ==========================================
 with gr.Blocks(title="Tomato Disease Report") as demo:
     gr.Markdown("# 🍅 Tomato Leaf Disease Diagnosis")
+    gr.Markdown("Designed by Bo Ruei Lin")
     gr.Markdown("Take or upload a photo of a tomato leaf, then click **Diagnose** to view the professional report.")
 
     with gr.Row():
