@@ -11,7 +11,8 @@ import gradio as gr
 # 參數與模型設定
 # ==========================================
 MODEL_NAME = "mobilenetv4_conv_small.e2400_r224_in1k"
-MAX_SIDE = 1024         
+MAX_SIDE = 1024         # 內部切片處理時的最大尺寸
+MAX_INPUT_SIDE = 800    # 🚨 【新增】使用者上傳圖片進來的第一時間最大限制，防範 OOM 記憶體不足
 MIN_CONF = 0.60         
 MAX_LEAVES = 10         
 MIN_LEAF_FRAC = 0.015   
@@ -113,7 +114,7 @@ def calc_infection_ratio(img_rgb):
 
 
 # ==========================================
-# 網頁報告排版 (HTML/CSS - 改為向上指標 ▲)
+# 網頁報告排版 (HTML/CSS)
 # ==========================================
 def render_custom_style(diagnosis_status, ratio=None, msg=""):
     r_val = max(0.0, min(100.0, ratio)) if ratio is not None else 0.0
@@ -155,7 +156,7 @@ def render_custom_style(diagnosis_status, ratio=None, msg=""):
 
 
 # ==========================================
-# 核心診斷函數
+# 核心診斷函數 (已加入防 OOM 圖片縮放)
 # ==========================================
 def diagnose(image_path):
     if image_path is None:
@@ -164,7 +165,11 @@ def diagnose(image_path):
     try:
         img = Image.open(image_path)
         img = ImageOps.exif_transpose(img)
-        img.thumbnail((MAX_SIDE, MAX_SIDE))
+        
+        # 🚨 【OOM 防護優化】一進來就先將長寬限制在 MAX_INPUT_SIDE (預設 800px) 內
+        # 這樣大於 800px 的圖片會被等比例縮小，大幅減少 OpenCV 和 PyTorch 的記憶體開銷
+        img.thumbnail((MAX_INPUT_SIDE, MAX_INPUT_SIDE))
+        
         arr = np.array(img.convert("RGB"))
     except Exception:
         return None, "❌ Unable to read the image. Please try another one.", None, None
