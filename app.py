@@ -15,7 +15,7 @@ MAX_SIDE = 1024         # 內部切片處理時的最大尺寸
 MAX_INPUT_SIDE = 800    # 🚨 【新增】使用者上傳圖片進來的第一時間最大限制，防範 OOM 記憶體不足
 MIN_CONF = 0.60         
 MAX_LEAVES = 10         
-MIN_LEAF_FRAC = 0.015   
+MIN_LEAF_FRAC = 0.05   
 
 # 部署在 Render 時通常使用 CPU，若有 GPU 自動切換
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
