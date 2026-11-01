@@ -15,7 +15,7 @@ MAX_SIDE = 1024         # Internal processing max size constraint
 MAX_INPUT_SIDE = 800    # 🚨 [OOM Protection] Initial max side limit for uploaded images to prevent out-of-memory crashes
 MIN_CONF = 0.60         # Confidence threshold for tomato classification stage 1
 MAX_LEAVES = 10         # Maximum number of leaf regions to inspect per image
-MIN_LEAF_FRAC = 0.015   # Minimum area ratio for detected leaves
+MIN_LEAF_FRAC = 0.05   # Minimum area ratio for detected leaves
 
 # Inference device setup (automatically uses GPU if available, falls back to CPU on Render)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
