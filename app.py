@@ -388,9 +388,7 @@ with gr.Blocks(title="Tomato Disease Report") as demo:
     </style>
     """)
 
-#demo.launch(share=True)
-
-# For deployment on Render, use this instead:
- if __name__ == "__main__":
-     port = int(os.environ.get("PORT", 7860))
-     demo.launch(server_name="0.0.0.0", server_port=port)
+if __name__ == "__main__":
+    # Bind to 0.0.0.0 and port for Render cloud deployment support
+    port = int(os.environ.get("PORT", 7860))
+    demo.launch(server_name="0.0.0.0", server_port=port)
