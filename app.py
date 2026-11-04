@@ -131,7 +131,7 @@ def calc_infection_ratio(img_rgb):
 
 
 # ==========================================
-# Comprehensive Report Rendering (V2 Style UI)
+# Comprehensive Report Rendering (V2 Style UI & Fixed Text Color)
 # ==========================================
 def render_multi_report(analyzed_results):
     html_cards = ""
@@ -144,7 +144,7 @@ def render_multi_report(analyzed_results):
             status_color = "#a93226"
             r_val = max(0.0, min(100.0, ratio))
             slider_html = f"""
-                <div style="margin-top: 10px; font-size: 16px; font-weight: bold; color: #a93226;">
+                <div style="margin-top: 10px; font-size: 16px; font-weight: bold; color: #a93226 !important;">
                     📉 Severity Score: [{r_val:.1f}%]
                 </div>
                 <div style="position: relative; margin-top: 10px; margin-bottom: 20px;">
@@ -154,7 +154,7 @@ def render_multi_report(analyzed_results):
                         <div style="background-color: #c0392b; flex: 1;" title="Severe (>66.6%)"></div>
                     </div>
                     <div style="position: absolute; top: -3px; bottom: -3px; left: {r_val}%; width: 3px; background-color: #111111; transform: translateX(-50%); z-index: 5; box-shadow: 0 0 3px rgba(255,255,255,0.8);"></div>
-                    <div style="position: absolute; top: 18px; left: {r_val}%; transform: translateX(-50%); font-size: 12px; font-weight: bold; color: #111111; background: rgba(255,255,255,0.9); padding: 0 4px; border: 1px solid #b5b0a5; border-radius: 3px; white-space: nowrap;">
+                    <div style="position: absolute; top: 18px; left: {r_val}%; transform: translateX(-50%); font-size: 12px; font-weight: bold; color: #111111 !important; background: rgba(255,255,255,0.9); padding: 0 4px; border: 1px solid #b5b0a5; border-radius: 3px; white-space: nowrap;">
                         {r_val:.1f}%
                     </div>
                 </div>
@@ -164,12 +164,12 @@ def render_multi_report(analyzed_results):
             slider_html = ""
 
         html_cards += f"""
-        <div style="background-color: #f4f1ea; border: 2px solid #dcd6cd; border-radius: 10px; padding: 15px; margin-bottom: 12px; font-family: Arial;">
-            <div style="font-size: 16px; font-weight: bold; color: {status_color};">
+        <div style="background-color: #f4f1ea !important; border: 2px solid #dcd6cd !important; border-radius: 10px !important; padding: 15px !important; margin-bottom: 12px !important; font-family: Arial, sans-serif !important; color: #2c2c2c !important;">
+            <div style="font-size: 16px !important; font-weight: bold !important; color: {status_color} !important;">
                 🌿 Leaf #{idx} — DIAGNOSIS STATUS: [{status.upper()}]
             </div>
             {slider_html}
-            <div style="margin-top: 8px; font-size: 15px; line-height: 1.5;">{msg}</div>
+            <div style="margin-top: 8px !important; font-size: 15px !important; line-height: 1.5 !important; color: #2c2c2c !important;">{msg}</div>
         </div>
         """
     return html_cards
