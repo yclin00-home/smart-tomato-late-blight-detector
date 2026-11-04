@@ -51,7 +51,7 @@ def predict(model, names, x):
 
 
 # ==========================================
-# Computer vision & precise contour extraction (V2純輪廓邏輯)
+# Computer vision & precise contour extraction
 # ==========================================
 def find_leaf_contours_and_crops(img_rgb, max_leaves=10, min_area_frac=0.05):
     h, w = img_rgb.shape[:2]
@@ -98,10 +98,8 @@ def draw_pure_leaf_outlines(img_rgb, analyzed_results):
         else:
             color = (128, 128, 128)
 
-        # 嚴格確保只畫出貼合葉緣的輪廓線 (cv2.drawContours)，絕對不畫方框 (cv2.rectangle)
         cv2.drawContours(vis, contours, -1, color, thickness)
         
-        # 在輪廓上方標註葉片編號 (#1, #2...)
         M = cv2.moments(contours[0]) if len(contours) > 0 else {}
         if M.get("m00", 0) > 0:
             cX = int(M["m10"] / M["m00"])
@@ -138,7 +136,7 @@ def calc_infection_ratio(img_rgb):
 
 
 # ==========================================
-# Comprehensive Report Rendering (強制深色文字顯示)
+# Comprehensive Report Rendering (強制全面深色文字)
 # ==========================================
 def render_multi_report(analyzed_results):
     html_cards = ""
@@ -170,7 +168,7 @@ def render_multi_report(analyzed_results):
             status_color = "#1e8449" if status == "tomato-without-late-blight" else "#555555"
             slider_html = ""
 
-        # 強制指定卡片背景與所有內文顏色為深灰色 (#2c2c2c)，徹底解決字體隱形問題
+        # 外層與內文全面強制指定 #2c2c2c 色彩
         html_cards += f"""
         <div style="background-color: #f4f1ea !important; border: 2px solid #dcd6cd !important; border-radius: 10px !important; padding: 15px !important; margin-bottom: 12px !important; font-family: Arial, sans-serif !important; color: #2c2c2c !important;">
             <div style="font-size: 16px !important; font-weight: bold !important; color: {status_color} !important;">
@@ -234,6 +232,7 @@ def diagnose(image_path):
                 else:
                     advice = "Advice: 🚨 Severe late blight! Strongly recommend immediate removal and destruction of the plant to prevent spread."
 
+                # 確保每一行文字都明確加上 style="color: #2c2c2c !important;"
                 msg = f"""
                 <span style="color: #2c2c2c !important;">🍅 <b>Tomato Leaf Confidence</b>: {tomato_conf*100:.1f}%</span><br>
                 <span style="color: #2c2c2c !important;">⚠️ <b>Late Blight Confidence</b>: {lb_conf*100:.1f}%</span><br>
@@ -253,6 +252,7 @@ def diagnose(image_path):
                     first_blight_lesion_vis = full_lesion_canvas
                     has_blight_found = True
             else:
+                # 確保無晚疫病的文字也能完整顯現
                 msg = f"""
                 <span style="color: #2c2c2c !important;">🍅 <b>Tomato Leaf Confidence</b>: {tomato_conf*100:.1f}%</span><br>
                 <span style="color: #2c2c2c !important;">✅ <b>No Late Blight Confidence</b>: {p2['Not_late_blight']*100:.1f}%</span>
