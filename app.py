@@ -8,17 +8,17 @@ from torchvision import transforms
 import gradio as gr
 
 # ==========================================
-# Parameters and model settings
+# Parameters and model settings (V1 Single Model)
 # ==========================================
 MODEL_NAME = "mobilenetv4_conv_small.e2400_r224_in1k"
-MAX_SIDE = 1024         # Max size for internal tile processing
 MAX_INPUT_SIDE = 800    # Resize uploaded images right away to avoid out-of-memory (OOM) errors
-MIN_CONF = 0.60         # Minimum "Tomato" confidence to treat a region as a tomato leaf
-MAX_LEAVES = 10         # Max number of leaf regions to check
-MIN_LEAF_FRAC = 0.05    # Min region area (fraction of the image) to count as a leaf
+MIN_CONF_INFERENCE = 0.60 # Minimum "Tomato" confidence to treat a region as a tomato leaf
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
 
-# Render usually runs on CPU; switch to GPU automatically if available
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Hardware acceleration support (CUDA, MPS, or CPU)
+device = torch.device("cuda" if torch.cuda.is_available() 
+                      else "mps" if torch.backends.mps.is_available() else "cpu")
 print(f"💻 Inference device: {device}")
 
 
@@ -35,11 +35,11 @@ def load_model(weights, classes_json):
     return m, names
 
 
-# Load the two trained models and their class labels
+# Load the two trained single models and their class labels (V1 approach)
 model1, names1 = load_model("m1_tomato.pth", "m1_classes.json")
 model2, names2 = load_model("m2_late_blight.pth", "m2_classes.json")
 
-tf = transforms.Compose([
+inf_tf = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
@@ -53,13 +53,9 @@ def predict(model, names, x):
 
 
 # ==========================================
-# Computer vision and leaf segmentation
+# Computer vision & precise contour extraction (V2 style)
 # ==========================================
-# Images are RGB arrays, so pure red is (255, 0, 0)
-RED = (255, 0, 0)
-
-
-def find_leaf_regions(img_rgb, max_leaves=MAX_LEAVES, min_area_frac=MIN_LEAF_FRAC):
+def find_leaf_contours_and_crops(img_rgb, max_leaves=10, min_area_frac=0.05):
     h, w = img_rgb.shape[:2]
     hsv = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HSV)
     green = cv2.inRange(hsv, np.array([35, 20, 20]), np.array([85, 255, 255]))
@@ -71,27 +67,42 @@ def find_leaf_regions(img_rgb, max_leaves=MAX_LEAVES, min_area_frac=MIN_LEAF_FRA
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k)
 
     n, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-    regions = []
+    leaf_items = []
 
     for i in range(1, n):
         x, y, bw, bh, area = stats[i]
         if area >= min_area_frac * h * w:
-            regions.append((int(area), int(x), int(y), int(bw), int(bh)))
+            single_mask = (labels == i).astype(np.uint8) * 255
+            contours, _ = cv2.findContours(single_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            leaf_items.append({
+                "area": int(area),
+                "box": (int(x), int(y), int(bw), int(bh)),
+                "contours": contours
+            })
 
-    regions.sort(reverse=True)
-    out = []
-    for area, x, y, bw, bh in regions[:max_leaves]:
-        out.append((x, y, x + bw, y + bh))
-    return out
+    leaf_items.sort(key=lambda item: item["area"], reverse=True)
+    return leaf_items[:max_leaves]
 
 
-def draw_boxes(img_rgb, regions):
+def draw_pure_leaf_outlines(img_rgb, analyzed_results):
     vis = img_rgb.copy()
-    t = max(2, img_rgb.shape[1] // 300)
-    for k, (x0, y0, x1, y1) in enumerate(regions, 1):
-        cv2.rectangle(vis, (x0, y0), (x1, y1), RED, t)
-        cv2.putText(vis, str(k), (x0 + 8, y0 + 38), cv2.FONT_HERSHEY_SIMPLEX,
-                    1.2, RED, 3, cv2.LINE_AA)
+    thickness = max(2, img_rgb.shape[1] // 300)
+
+    for idx, res in enumerate(analyzed_results, 1):
+        contours = res["contours"]
+        x, y, bw, bh = res["box"]
+        status = res["status"]
+
+        if status == "tomato-with-late-blight":
+            color = RED
+        elif status == "tomato-without-late-blight":
+            color = GREEN
+        else:
+            color = (128, 128, 128)
+
+        cv2.drawContours(vis, contours, -1, color, thickness)
+        cv2.putText(vis, f"#{idx}", (x + 8, y + 35), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 3, cv2.LINE_AA)
+
     return vis
 
 
@@ -112,283 +123,164 @@ def calc_infection_ratio(img_rgb):
     leaf_px = cv2.countNonZero(leaf_mask)
     ratio = 0.0 if leaf_px == 0 else cv2.countNonZero(lesion) / leaf_px * 100.0
 
-    h, w = img_rgb.shape[:2]
-
-    # Leaf outline (red)
-    leaf_vis = img_rgb.copy()
-    contours = cv2.findContours(leaf_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
-    cv2.drawContours(leaf_vis, contours, -1, RED, max(2, w // 300))
-
-    # Lesion overlay (red tint)
     lesion_vis = img_rgb.copy()
     m = lesion > 0
     lesion_vis[m] = (0.4 * lesion_vis[m] + 0.6 * np.array(RED)).astype(np.uint8)
 
-    return ratio, leaf_vis, lesion_vis
+    return ratio, lesion_vis
 
 
 # ==========================================
-# Report layout (HTML/CSS)
+# Comprehensive Report Rendering (V2 Style UI)
 # ==========================================
-# Status colors: only late blight is red; everything else is neutral
-STATUS_COLORS = {
-    "non-tomato": "#555555",
-    "tomato-without-late-blight": "#1e8449",
-    "tomato-with-late-blight": "#a93226",
-}
+def render_multi_report(analyzed_results):
+    html_cards = ""
+    for idx, res in enumerate(analyzed_results, 1):
+        status = res["status"]
+        ratio = res.get("ratio", 0.0)
+        msg = res["msg"]
 
+        if status == "tomato-with-late-blight":
+            status_color = "#a93226"
+            r_val = max(0.0, min(100.0, ratio))
+            slider_html = f"""
+                <div style="margin-top: 10px; font-size: 16px; font-weight: bold; color: #a93226;">
+                    📉 Severity Score: [{r_val:.1f}%]
+                </div>
+                <div style="position: relative; margin-top: 10px; margin-bottom: 20px;">
+                    <div style="display: flex; height: 16px; border-radius: 4px; overflow: hidden; border: 1px solid #b5b0a5;">
+                        <div style="background-color: #27ae60; flex: 1;" title="Mild (<33.3%)"></div>
+                        <div style="background-color: #f39c12; flex: 1;" title="Moderate (33.3% - 66.6%)"></div>
+                        <div style="background-color: #c0392b; flex: 1;" title="Severe (>66.6%)"></div>
+                    </div>
+                    <div style="position: absolute; top: -3px; bottom: -3px; left: {r_val}%; width: 3px; background-color: #111111; transform: translateX(-50%); z-index: 5; box-shadow: 0 0 3px rgba(255,255,255,0.8);"></div>
+                    <div style="position: absolute; top: 18px; left: {r_val}%; transform: translateX(-50%); font-size: 12px; font-weight: bold; color: #111111; background: rgba(255,255,255,0.9); padding: 0 4px; border: 1px solid #b5b0a5; border-radius: 3px; white-space: nowrap;">
+                        {r_val:.1f}%
+                    </div>
+                </div>
+            """
+        else:
+            status_color = "#1e8449" if status == "tomato-without-late-blight" else "#555555"
+            slider_html = ""
 
-def render_custom_style(diagnosis_status, ratio=None, msg=""):
-    r_val = max(0.0, min(100.0, ratio)) if ratio is not None else 0.0
-    status_color = STATUS_COLORS.get(diagnosis_status, "#2c2c2c")
-
-    slider_html = f"""
-        <div class="score-header" style="margin-top: 15px; font-size: 18px;">
-            <span class="score-title">SEVERITY SCORE:</span>
-            <span class="score-bracket">[</span><span class="score-value">{r_val:.1f}%</span><span class="score-bracket">]</span>
-        </div>
-        <div class="slider-container">
-            <div class="slider-labels-grid">
-                <span class="label-low">Low (0-33%)</span>
-                <span class="label-med">Medium (33-66%)</span>
-                <span class="label-high">High (66-100%)</span>
+        html_cards += f"""
+        <div style="background-color: #f4f1ea; border: 2px solid #dcd6cd; border-radius: 10px; padding: 15px; margin-bottom: 12px; font-family: Arial;">
+            <div style="font-size: 16px; font-weight: bold; color: {status_color};">
+                🌿 Leaf #{idx} — DIAGNOSIS STATUS: [{status.upper()}]
             </div>
-            <div class="pointer-up" style="left: {r_val}%;">▲</div>
-            <div class="color-bar">
-                <div class="bar-low"></div>
-                <div class="bar-med"></div>
-                <div class="bar-high"></div>
-            </div>
+            {slider_html}
+            <div style="margin-top: 8px; font-size: 15px; line-height: 1.5;">{msg}</div>
         </div>
-    """ if diagnosis_status == "tomato-with-late-blight" else ""
-
-    html_content = f"""
-    <div class="custom-report-card">
-        <div class="score-header">
-            <span class="score-title">DIAGNOSIS STATUS:</span>
-            <span class="score-bracket" style="color: {status_color} !important;">[</span><span class="score-value" style="font-size: 20px; color: {status_color} !important;">{diagnosis_status}</span><span class="score-bracket" style="color: {status_color} !important;">]</span>
-        </div>
-        {slider_html}
-        <div class="treatment-section">
-            <div class="treatment-title" style="font-weight:bold; margin-bottom:5px;">RECOMMENDED ACTION:</div>
-            <div class="treatment-text">{msg}</div>
-        </div>
-    </div>
-    """
-    return html_content
+        """
+    return html_cards
 
 
 # ==========================================
-# Core diagnosis function
+# Core Diagnosis Main Logic
 # ==========================================
-def conf_line(label_html, conf):
-    return f"{label_html} (Confidence {conf*100:.1f}%)"
-
-
 def diagnose(image_path):
-    if image_path is None:
-        return None, "Please upload or take a photo first.", None, None
-
+    if image_path is None: 
+        return None, None, "Please upload an image first."
     try:
         img = Image.open(image_path)
         img = ImageOps.exif_transpose(img)
-
-        # OOM protection: shrink the image to at most MAX_INPUT_SIDE right away
         img.thumbnail((MAX_INPUT_SIDE, MAX_INPUT_SIDE))
-
         arr = np.array(img.convert("RGB"))
     except Exception:
-        return None, "❌ Unable to read the image. Please try another one.", None, None
+        return None, None, "❌ Failed to read image."
 
-    regions = find_leaf_regions(arr)
-    boxes_vis = draw_boxes(arr, regions) if regions else arr
+    leaf_items = find_leaf_contours_and_crops(arr)
+    if not leaf_items:
+        empty_report = render_multi_report([{"status": "non-tomato", "msg": "🚫 <b>Non-tomato leaf</b> — No valid leaf regions detected."}])
+        return arr, arr, empty_report
 
-    # 1) No leaf region found -> not a tomato (models were not run, so no confidence)
-    if not regions:
-        status = "non-tomato"
-        msg = "🚫 <b>Not a tomato leaf</b> — no leaf region was detected in the image."
-        html_out = render_custom_style(status, msg=msg)
-        return arr, html_out, boxes_vis, None
+    analyzed_results = []
+    first_blight_lesion_vis = arr 
+    has_blight_found = False
 
-    tomato_found = False
-    results = []
+    for item in leaf_items:
+        x, y, bw, bh = item["box"]
+        crop = arr[y:y+bh, x:x+bw]
+        if crop.size == 0: continue
 
-    for r in regions:
-        x0, y0, x1, y1 = r
-        crop = arr[y0:y1, x0:x1]
-        if crop.size == 0:
-            continue
-
-        x = tf(Image.fromarray(crop)).unsqueeze(0).to(device)
-        p1 = predict(model1, names1, x)
+        x_tensor = inf_tf(Image.fromarray(crop)).unsqueeze(0).to(device)
+        p1 = predict(model1, names1, x_tensor) # V1 single model predict
         tomato_conf = p1["Tomato"]
 
-        if tomato_conf >= MIN_CONF:
-            tomato_found = True
-            p2 = predict(model2, names2, x)
+        if tomato_conf >= MIN_CONF_INFERENCE:
+            p2 = predict(model2, names2, x_tensor) # V1 single model predict
             lb_conf = p2["Late_blight"]
-            nlb_conf = p2["Not_late_blight"]
-            if lb_conf >= nlb_conf:
-                top, stage2_conf = "Late_blight", lb_conf
+            is_blight = lb_conf >= p2["Not_late_blight"]
+
+            if is_blight:
+                ratio, lesion_vis = calc_infection_ratio(crop)
+                if ratio < 33.3:
+                    advice = "Advice: Mild late blight. Recommend removing infected leaves and applying copper fungicide."
+                elif ratio < 66.6:
+                    advice = "Advice: Moderate late blight. Isolate plant and use systemic fungicide."
+                else:
+                    advice = "Advice: 🚨 Severe late blight! Strongly recommend immediate removal and destruction of the plant to prevent spread."
+
+                msg = f"🍅 <b>Tomato Leaf Confidence</b>: {tomato_conf*100:.1f}%<br>⚠️ <b>Late Blight Confidence</b>: {lb_conf*100:.1f}%<br>{advice}"
+                analyzed_results.append({
+                    "box": (x, y, bw, bh),
+                    "contours": item["contours"],
+                    "status": "tomato-with-late-blight",
+                    "ratio": ratio,
+                    "msg": msg
+                })
+
+                if not has_blight_found:
+                    full_lesion_canvas = arr.copy()
+                    full_lesion_canvas[y:y+bh, x:x+bw] = lesion_vis
+                    first_blight_lesion_vis = full_lesion_canvas
+                    has_blight_found = True
             else:
-                top, stage2_conf = "Not_late_blight", nlb_conf
-            results.append({
-                "top": top,
-                "tomato_conf": tomato_conf,      # Stage 1: confidence it is a tomato leaf
-                "stage2_conf": stage2_conf,      # Stage 2: confidence of late blight / no late blight
-                "score": tomato_conf * stage2_conf,
-                "crop": crop,
-            })
+                msg = f"🍅 <b>Tomato Leaf Confidence</b>: {tomato_conf*100:.1f}%<br>✅ <b>No Late Blight Confidence</b>: {p2['Not_late_blight']*100:.1f}%"
+                analyzed_results.append({
+                    "box": (x, y, bw, bh),
+                    "contours": item["contours"],
+                    "status": "tomato-without-late-blight",
+                    "msg": msg
+                })
         else:
-            results.append({
-                "top": "Non_tomato",
-                "tomato_conf": tomato_conf,
-                "stage2_conf": None,
-                "non_tomato_conf": p1["Non_tomato"],  # Stage 1: confidence it is NOT a tomato leaf
-                "score": p1["Non_tomato"],
-                "crop": crop,
+            msg = f"🚫 <b>Non-tomato / Background Noise Confidence</b>: {p1['Non_tomato']*100:.1f}%<br>This region is not identified as a tomato leaf."
+            analyzed_results.append({
+                "box": (x, y, bw, bh),
+                "contours": item["contours"],
+                "status": "non-tomato",
+                "msg": msg
             })
 
-    note = f" (Checked {len(regions)} leaf region(s))"
+    pure_outlines_vis = draw_pure_leaf_outlines(arr, analyzed_results)
+    lesion_output_vis = first_blight_lesion_vis if has_blight_found else arr
+    html_report = render_multi_report(analyzed_results)
 
-    # 2) No region is a tomato leaf -> not a tomato, with confidence
-    if not tomato_found:
-        chosen = max(results, key=lambda res: res["score"])
-        status = "non-tomato"
-        msg = f"🚫 {conf_line('<b>Not a tomato leaf</b>', chosen['non_tomato_conf'])}.{note}"
-        html_out = render_custom_style(status, msg=msg)
-        return arr, html_out, boxes_vis, None
-
-    tomato_results = [res for res in results if res["top"] in ("Late_blight", "Not_late_blight")]
-    blighted = [res for res in tomato_results if res["top"] == "Late_blight"]
-
-    if blighted:
-        chosen = max(blighted, key=lambda res: res["score"])
-        label = "Late_blight"
-    else:
-        chosen = max(tomato_results, key=lambda res: res["score"])
-        label = "Not_late_blight"
-
-    tomato_line = conf_line("🍅 <b>Tomato leaf</b>", chosen["tomato_conf"])
-
-    # Leaf outline + lesion overlay for the chosen leaf (used for both tomato outcomes)
-    ratio, leaf_vis, lesion_vis = calc_infection_ratio(chosen["crop"])
-
-    # 3) Tomato, but no late blight: tomato confidence + "no late blight" confidence
-    if label == "Not_late_blight":
-        status = "tomato-without-late-blight"
-        lb_line = conf_line("<b>No late blight detected</b>", chosen["stage2_conf"])
-        msg = f"{tomato_line}<br>{lb_line}.{note}"
-        html_out = render_custom_style(status, msg=msg)
-        return arr, html_out, boxes_vis, leaf_vis
-
-    # 4) Tomato with late blight: both confidences + severity and advice
-    status = "tomato-with-late-blight"
-    lb_line = conf_line("⚠️ <b>Late blight detected</b>", chosen["stage2_conf"])
-
-    if ratio < 33.3:
-        advice = "Mild late blight. Remove infected leaves promptly and apply an organic copper fungicide."
-    elif ratio < 66.6:
-        advice = "Moderate late blight. Isolate the plant, remove infected foliage, and use a systemic fungicide."
-    else:
-        advice = "🚨 Severe late blight! Remove and destroy the plant immediately to prevent spore transmission."
-
-    msg = f"{tomato_line}<br>{lb_line}<br>{advice}{note}"
-    html_out = render_custom_style(status, ratio=ratio, msg=msg)
-    return lesion_vis, html_out, boxes_vis, leaf_vis
+    return pure_outlines_vis, lesion_output_vis, html_report
 
 
 # ==========================================
-# Gradio UI
+# Gradio Web Interface (Render Port Support)
 # ==========================================
-with gr.Blocks(title="Tomato Disease Report") as demo:
-    gr.Markdown("# 🍅 Tomato Leaf Disease Diagnosis")
-    gr.Markdown("Designed by Bo Ruei Lin")
-    gr.Markdown("Take or upload a photo of a tomato leaf, then click **Diagnose** to view the professional report.")
-
-    with gr.Row():
-        with gr.Column(scale=1):
-            image_input = gr.Image(type="filepath", label="Take or Upload Photo", sources=["upload", "webcam"])
-            btn = gr.Button("🔍 Diagnose", variant="primary", elem_id="diag_btn")
-
-        with gr.Column(scale=1):
-            image_output = gr.Image(label="Analyzed Image", interactive=False)
-
-    report_output = gr.HTML(label="Diagnostic Report")
-
-    with gr.Accordion("🔬 Expert View: Detailed Analysis & Masks", open=False):
-        gr.Markdown("Computer vision segmentation details for experts or advanced users:")
-        with gr.Row():
-            boxes_output = gr.Image(label="Detected Leaf Regions (Red Boxes)", interactive=False)
-            leaf_output = gr.Image(label="Leaf Mask (Red Outline)", interactive=False)
-
-    btn.click(diagnose, inputs=[image_input],
-              outputs=[image_output, report_output, boxes_output, leaf_output])
-
-    gr.HTML("""
-    <style>
-        .custom-report-card, .custom-report-card * {
-            color: #2c2c2c !important;
-        }
-        .custom-report-card {
-            background-color: #f4f1ea !important;
-            border: 2px solid #dcd6cd !important;
-            border-radius: 12px !important;
-            padding: 20px !important;
-            font-family: Arial, sans-serif !important;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
-            margin-top: 15px !important;
-        }
-        .score-header {
-            font-size: 18px !important;
-            font-weight: bold !important;
-            margin-bottom: 8px !important;
-        }
-        .score-bracket {
-            color: #a93226 !important;
-            font-weight: bold !important;
-        }
-        .score-value {
-            color: #a93226 !important;
-            font-weight: bold !important;
-            font-size: 22px !important;
-        }
-        .slider-container {
-            position: relative !important;
-            margin: 25px 0 15px 0 !important;
-        }
-        .slider-labels-grid {
-            display: grid !important;
-            grid-template-columns: 1fr 1fr 1fr !important;
-            margin-bottom: 5px !important;
-            font-size: 14px !important;
-            font-weight: bold !important;
-        }
-        .label-low { text-align: left; }
-        .label-med { text-align: center; }
-        .label-high { text-align: right; }
-        .pointer-up {
-            position: absolute !important;
-            top: 18px !important;
-            font-size: 16px !important;
-            color: #000000 !important;
-            transform: translateX(-50%);
-        }
-        .color-bar {
-            display: flex !important;
-            height: 24px !important;
-            border-radius: 6px !important;
-            overflow: hidden !important;
-            border: 1.5px solid #b5b0a5 !important;
-            margin-top: 5px !important;
-        }
-        .bar-low { background-color: #27ae60 !important; flex: 1; }
-        .bar-med { background-color: #f39c12 !important; flex: 1; }
-        .bar-high { background-color: #c0392b !important; flex: 1; }
-    </style>
-    """)
-
 if __name__ == "__main__":
-    # Bind to 0.0.0.0 and port for Render cloud deployment support
     port = int(os.environ.get("PORT", 7860))
+
+    with gr.Blocks(title="Tomato Disease Report v2") as demo:
+        gr.Markdown("# 🍅 Tomato Late Blight Intelligent Diagnosis System")
+        gr.Markdown("Upload an image to automatically outline true leaf contours, display lesion highlights, and review detailed confidence scores.")
+
+        with gr.Row():
+            image_input = gr.Image(type="filepath", label="Upload Test Image", sources=["upload", "webcam"])
+
+        btn = gr.Button("🔍 Start Precision Diagnosis", variant="primary")
+
+        with gr.Row():
+            outlines_output = gr.Image(label="1. True Leaf Edge Outlines")
+            leases_output = gr.Image(label="2. Lesion Highlight (Late Blight Only)")
+
+        report_output = gr.HTML(label="Detailed Diagnostic Report & Confidence Scores")
+
+        btn.click(diagnose, inputs=[image_input],
+                  outputs=[outlines_output, leases_output, report_output])
+
     demo.launch(server_name="0.0.0.0", server_port=port)
