@@ -8,15 +8,14 @@ from torchvision import transforms
 import gradio as gr
 
 # ==========================================
-# Parameters and model settings (V1 Single Model)
+# Parameters and model settings
 # ==========================================
 MODEL_NAME = "mobilenetv4_conv_small.e2400_r224_in1k"
-MAX_INPUT_SIDE = 800    # Resize uploaded images right away to avoid out-of-memory (OOM) errors
-MIN_CONF_INFERENCE = 0.60 # Minimum "Tomato" confidence to treat a region as a tomato leaf
+MAX_INPUT_SIDE = 800    
+MIN_CONF_INFERENCE = 0.60 
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 
-# Hardware acceleration support (CUDA, MPS, or CPU)
 device = torch.device("cuda" if torch.cuda.is_available() 
                       else "mps" if torch.backends.mps.is_available() else "cpu")
 print(f"💻 Inference device: {device}")
@@ -35,7 +34,6 @@ def load_model(weights, classes_json):
     return m, names
 
 
-# Load the two trained single models and their class labels (V1 approach)
 model1, names1 = load_model("m1_tomato.pth", "m1_classes.json")
 model2, names2 = load_model("m2_late_blight.pth", "m2_classes.json")
 
@@ -53,7 +51,7 @@ def predict(model, names, x):
 
 
 # ==========================================
-# Computer vision & precise contour extraction
+# Computer vision & precise contour extraction (V2純輪廓邏輯)
 # ==========================================
 def find_leaf_contours_and_crops(img_rgb, max_leaves=10, min_area_frac=0.05):
     h, w = img_rgb.shape[:2]
@@ -100,9 +98,17 @@ def draw_pure_leaf_outlines(img_rgb, analyzed_results):
         else:
             color = (128, 128, 128)
 
-        # 畫出貼合葉緣的真實輪廓線，而非方形框
+        # 嚴格確保只畫出貼合葉緣的輪廓線 (cv2.drawContours)，絕對不畫方框 (cv2.rectangle)
         cv2.drawContours(vis, contours, -1, color, thickness)
-        cv2.putText(vis, f"#{idx}", (x + 8, y + 35), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 3, cv2.LINE_AA)
+        
+        # 在輪廓上方標註葉片編號 (#1, #2...)
+        M = cv2.moments(contours[0]) if len(contours) > 0 else {}
+        if M.get("m00", 0) > 0:
+            cX = int(M["m10"] / M["m00"])
+            cY = int(M["m01"] / M["m00"])
+        else:
+            cX, cY = x + 8, y + 35
+        cv2.putText(vis, f"#{idx}", (cX, cY), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 3, cv2.LINE_AA)
 
     return vis
 
@@ -132,7 +138,7 @@ def calc_infection_ratio(img_rgb):
 
 
 # ==========================================
-# Comprehensive Report Rendering (Fixed Text Color)
+# Comprehensive Report Rendering (強制深色文字顯示)
 # ==========================================
 def render_multi_report(analyzed_results):
     html_cards = ""
@@ -164,14 +170,16 @@ def render_multi_report(analyzed_results):
             status_color = "#1e8449" if status == "tomato-without-late-blight" else "#555555"
             slider_html = ""
 
-        # 強制指定所有文字為深灰色 (#2c2c2c)，避免在深色主題下隱形
+        # 強制指定卡片背景與所有內文顏色為深灰色 (#2c2c2c)，徹底解決字體隱形問題
         html_cards += f"""
         <div style="background-color: #f4f1ea !important; border: 2px solid #dcd6cd !important; border-radius: 10px !important; padding: 15px !important; margin-bottom: 12px !important; font-family: Arial, sans-serif !important; color: #2c2c2c !important;">
             <div style="font-size: 16px !important; font-weight: bold !important; color: {status_color} !important;">
                 🌿 Leaf #{idx} — DIAGNOSIS STATUS: [{status.upper()}]
             </div>
             {slider_html}
-            <div style="margin-top: 8px !important; font-size: 15px !important; line-height: 1.5 !important; color: #2c2c2c !important;">{msg}</div>
+            <div style="margin-top: 8px !important; font-size: 15px !important; line-height: 1.6 !important; color: #2c2c2c !important;">
+                {msg}
+            </div>
         </div>
         """
     return html_cards
@@ -193,7 +201,10 @@ def diagnose(image_path):
 
     leaf_items = find_leaf_contours_and_crops(arr)
     if not leaf_items:
-        empty_report = render_multi_report([{"status": "non-tomato", "msg": "🚫 <b>Non-tomato leaf</b> — No valid leaf regions detected."}])
+        empty_report = render_multi_report([{
+            "status": "non-tomato", 
+            "msg": '<span style="color: #2c2c2c !important;">🚫 <b>Non-tomato leaf</b> — No valid leaf regions detected.</span>'
+        }])
         return arr, arr, empty_report
 
     analyzed_results = []
@@ -223,7 +234,11 @@ def diagnose(image_path):
                 else:
                     advice = "Advice: 🚨 Severe late blight! Strongly recommend immediate removal and destruction of the plant to prevent spread."
 
-                msg = f"🍅 <b>Tomato Leaf Confidence</b>: {tomato_conf*100:.1f}%<br>⚠️ <b>Late Blight Confidence</b>: {lb_conf*100:.1f}%<br>{advice}"
+                msg = f"""
+                <span style="color: #2c2c2c !important;">🍅 <b>Tomato Leaf Confidence</b>: {tomato_conf*100:.1f}%</span><br>
+                <span style="color: #2c2c2c !important;">⚠️ <b>Late Blight Confidence</b>: {lb_conf*100:.1f}%</span><br>
+                <span style="color: #2c2c2c !important; font-weight: bold;">{advice}</span>
+                """
                 analyzed_results.append({
                     "box": (x, y, bw, bh),
                     "contours": item["contours"],
@@ -238,7 +253,10 @@ def diagnose(image_path):
                     first_blight_lesion_vis = full_lesion_canvas
                     has_blight_found = True
             else:
-                msg = f"🍅 <b>Tomato Leaf Confidence</b>: {tomato_conf*100:.1f}%<br>✅ <b>No Late Blight Confidence</b>: {p2['Not_late_blight']*100:.1f}%"
+                msg = f"""
+                <span style="color: #2c2c2c !important;">🍅 <b>Tomato Leaf Confidence</b>: {tomato_conf*100:.1f}%</span><br>
+                <span style="color: #2c2c2c !important;">✅ <b>No Late Blight Confidence</b>: {p2['Not_late_blight']*100:.1f}%</span>
+                """
                 analyzed_results.append({
                     "box": (x, y, bw, bh),
                     "contours": item["contours"],
@@ -246,7 +264,10 @@ def diagnose(image_path):
                     "msg": msg
                 })
         else:
-            msg = f"🚫 <b>Non-tomato / Background Noise Confidence</b>: {p1['Non_tomato']*100:.1f}%<br>This region is not identified as a tomato leaf."
+            msg = f"""
+            <span style="color: #2c2c2c !important;">🚫 <b>Non-tomato / Background Noise Confidence</b>: {p1['Non_tomato']*100:.1f}%</span><br>
+            <span style="color: #2c2c2c !important;">This region is not identified as a tomato leaf.</span>
+            """
             analyzed_results.append({
                 "box": (x, y, bw, bh),
                 "contours": item["contours"],
@@ -262,7 +283,7 @@ def diagnose(image_path):
 
 
 # ==========================================
-# Gradio Web Interface (Render Port Support)
+# Gradio Web Interface
 # ==========================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
