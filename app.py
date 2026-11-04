@@ -53,7 +53,7 @@ def predict(model, names, x):
 
 
 # ==========================================
-# Computer vision & precise contour extraction (V2 style)
+# Computer vision & precise contour extraction
 # ==========================================
 def find_leaf_contours_and_crops(img_rgb, max_leaves=10, min_area_frac=0.05):
     h, w = img_rgb.shape[:2]
@@ -100,6 +100,7 @@ def draw_pure_leaf_outlines(img_rgb, analyzed_results):
         else:
             color = (128, 128, 128)
 
+        # 畫出貼合葉緣的真實輪廓線，而非方形框
         cv2.drawContours(vis, contours, -1, color, thickness)
         cv2.putText(vis, f"#{idx}", (x + 8, y + 35), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 3, cv2.LINE_AA)
 
@@ -131,7 +132,7 @@ def calc_infection_ratio(img_rgb):
 
 
 # ==========================================
-# Comprehensive Report Rendering (V2 Style UI & Fixed Text Color)
+# Comprehensive Report Rendering (Fixed Text Color)
 # ==========================================
 def render_multi_report(analyzed_results):
     html_cards = ""
@@ -163,6 +164,7 @@ def render_multi_report(analyzed_results):
             status_color = "#1e8449" if status == "tomato-without-late-blight" else "#555555"
             slider_html = ""
 
+        # 強制指定所有文字為深灰色 (#2c2c2c)，避免在深色主題下隱形
         html_cards += f"""
         <div style="background-color: #f4f1ea !important; border: 2px solid #dcd6cd !important; border-radius: 10px !important; padding: 15px !important; margin-bottom: 12px !important; font-family: Arial, sans-serif !important; color: #2c2c2c !important;">
             <div style="font-size: 16px !important; font-weight: bold !important; color: {status_color} !important;">
@@ -204,11 +206,11 @@ def diagnose(image_path):
         if crop.size == 0: continue
 
         x_tensor = inf_tf(Image.fromarray(crop)).unsqueeze(0).to(device)
-        p1 = predict(model1, names1, x_tensor) # V1 single model predict
+        p1 = predict(model1, names1, x_tensor)
         tomato_conf = p1["Tomato"]
 
         if tomato_conf >= MIN_CONF_INFERENCE:
-            p2 = predict(model2, names2, x_tensor) # V1 single model predict
+            p2 = predict(model2, names2, x_tensor)
             lb_conf = p2["Late_blight"]
             is_blight = lb_conf >= p2["Not_late_blight"]
 
@@ -276,11 +278,11 @@ if __name__ == "__main__":
 
         with gr.Row():
             outlines_output = gr.Image(label="1. True Leaf Edge Outlines")
-            leases_output = gr.Image(label="2. Lesion Highlight (Late Blight Only)")
+            lesion_output = gr.Image(label="2. Lesion Highlight (Late Blight Only)")
 
         report_output = gr.HTML(label="Detailed Diagnostic Report & Confidence Scores")
 
         btn.click(diagnose, inputs=[image_input],
-                  outputs=[outlines_output, leases_output, report_output])
+                  outputs=[outlines_output, lesion_output, report_output])
 
     demo.launch(server_name="0.0.0.0", server_port=port)
