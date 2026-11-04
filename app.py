@@ -98,6 +98,7 @@ def draw_pure_leaf_outlines(img_rgb, analyzed_results):
         else:
             color = (128, 128, 128)
 
+        # 嚴格只畫出貼合葉緣的真實輪廓，絕不畫方框
         cv2.drawContours(vis, contours, -1, color, thickness)
         
         M = cv2.moments(contours[0]) if len(contours) > 0 else {}
@@ -136,7 +137,7 @@ def calc_infection_ratio(img_rgb):
 
 
 # ==========================================
-# Comprehensive Report Rendering (強制全面深色文字)
+# Comprehensive Report Rendering
 # ==========================================
 def render_multi_report(analyzed_results):
     html_cards = ""
@@ -168,14 +169,14 @@ def render_multi_report(analyzed_results):
             status_color = "#1e8449" if status == "tomato-without-late-blight" else "#555555"
             slider_html = ""
 
-        # 外層與內文全面強制指定 #2c2c2c 色彩
+        # 使用 class 配合全域 CSS 強制上色
         html_cards += f"""
-        <div style="background-color: #f4f1ea !important; border: 2px solid #dcd6cd !important; border-radius: 10px !important; padding: 15px !important; margin-bottom: 12px !important; font-family: Arial, sans-serif !important; color: #2c2c2c !important;">
+        <div class="custom-report-card">
             <div style="font-size: 16px !important; font-weight: bold !important; color: {status_color} !important;">
                 🌿 Leaf #{idx} — DIAGNOSIS STATUS: [{status.upper()}]
             </div>
             {slider_html}
-            <div style="margin-top: 8px !important; font-size: 15px !important; line-height: 1.6 !important; color: #2c2c2c !important;">
+            <div style="margin-top: 8px !important; font-size: 15px !important; line-height: 1.6 !important;">
                 {msg}
             </div>
         </div>
@@ -201,7 +202,7 @@ def diagnose(image_path):
     if not leaf_items:
         empty_report = render_multi_report([{
             "status": "non-tomato", 
-            "msg": '<span style="color: #2c2c2c !important;">🚫 <b>Non-tomato leaf</b> — No valid leaf regions detected.</span>'
+            "msg": '🚫 <b>Non-tomato leaf</b> — No valid leaf regions detected.'
         }])
         return arr, arr, empty_report
 
@@ -232,12 +233,7 @@ def diagnose(image_path):
                 else:
                     advice = "Advice: 🚨 Severe late blight! Strongly recommend immediate removal and destruction of the plant to prevent spread."
 
-                # 確保每一行文字都明確加上 style="color: #2c2c2c !important;"
-                msg = f"""
-                <span style="color: #2c2c2c !important;">🍅 <b>Tomato Leaf Confidence</b>: {tomato_conf*100:.1f}%</span><br>
-                <span style="color: #2c2c2c !important;">⚠️ <b>Late Blight Confidence</b>: {lb_conf*100:.1f}%</span><br>
-                <span style="color: #2c2c2c !important; font-weight: bold;">{advice}</span>
-                """
+                msg = f"🍅 <b>Tomato Leaf Confidence</b>: {tomato_conf*100:.1f}%<br>⚠️ <b>Late Blight Confidence</b>: {lb_conf*100:.1f}%<br><b>{advice}</b>"
                 analyzed_results.append({
                     "box": (x, y, bw, bh),
                     "contours": item["contours"],
@@ -252,11 +248,7 @@ def diagnose(image_path):
                     first_blight_lesion_vis = full_lesion_canvas
                     has_blight_found = True
             else:
-                # 確保無晚疫病的文字也能完整顯現
-                msg = f"""
-                <span style="color: #2c2c2c !important;">🍅 <b>Tomato Leaf Confidence</b>: {tomato_conf*100:.1f}%</span><br>
-                <span style="color: #2c2c2c !important;">✅ <b>No Late Blight Confidence</b>: {p2['Not_late_blight']*100:.1f}%</span>
-                """
+                msg = f"🍅 <b>Tomato Leaf Confidence</b>: {tomato_conf*100:.1f}%<br>✅ <b>No Late Blight Confidence</b>: {p2['Not_late_blight']*100:.1f}%"
                 analyzed_results.append({
                     "box": (x, y, bw, bh),
                     "contours": item["contours"],
@@ -264,10 +256,7 @@ def diagnose(image_path):
                     "msg": msg
                 })
         else:
-            msg = f"""
-            <span style="color: #2c2c2c !important;">🚫 <b>Non-tomato / Background Noise Confidence</b>: {p1['Non_tomato']*100:.1f}%</span><br>
-            <span style="color: #2c2c2c !important;">This region is not identified as a tomato leaf.</span>
-            """
+            msg = f"🚫 <b>Non-tomato / Background Noise Confidence</b>: {p1['Non_tomato']*100:.1f}%<br>This region is not identified as a tomato leaf."
             analyzed_results.append({
                 "box": (x, y, bw, bh),
                 "contours": item["contours"],
@@ -283,7 +272,7 @@ def diagnose(image_path):
 
 
 # ==========================================
-# Gradio Web Interface
+# Gradio Web Interface (含全域 CSS 強制文字顏色)
 # ==========================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
@@ -305,5 +294,22 @@ if __name__ == "__main__":
 
         btn.click(diagnose, inputs=[image_input],
                   outputs=[outlines_output, lesion_output, report_output])
+
+        # 透過全域 CSS 強制覆蓋卡片內所有文字顏色，徹底解決深色模式隱形問題
+        gr.HTML("""
+        <style>
+            .custom-report-card {
+                background-color: #f4f1ea !important;
+                border: 2px solid #dcd6cd !important;
+                border-radius: 10px !important;
+                padding: 15px !important;
+                margin-bottom: 12px !important;
+                font-family: Arial, sans-serif !important;
+            }
+            .custom-report-card, .custom-report-card *, .custom-report-card span, .custom-report-card b {
+                color: #2c2c2c !important;
+            }
+        </style>
+        """)
 
     demo.launch(server_name="0.0.0.0", server_port=port)
