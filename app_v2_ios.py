@@ -117,7 +117,7 @@ def calc_infection_ratio(img_rgb):
 def process_image_array(arr):
     leaf_items = find_leaf_contours_and_crops(arr)
     if not leaf_items:
-        return [{"status": "non-tomato", "msg": "No valid leaf regions detected."}]
+        return [{"status": "non-tomato", "msg": "No valid leaf regions detected.", "advice": "Not a tomato leaf."}]
 
     analyzed_results = []
     for item in leaf_items:
@@ -293,7 +293,7 @@ with gr.Blocks(title="Tomato Disease Report v2") as demo:
 
 
 # ==========================================
-# 5. FastAPI Integration (終極萬用接收端點：同時支援 JSON 與檔案上傳)
+# 5. FastAPI Integration (支援 JSON 庫與 Thunkable 簡易欄位)
 # ==========================================
 app = FastAPI()
 
@@ -327,7 +327,7 @@ async def api_predict(request: Request):
             if file:
                 image_bytes = await file.read()
                 
-        # 情況 C：保險預備（萬一 headers 沒對到，直接嘗試解析 body）
+        # 情況 C：保險預備
         if not image_bytes:
             body_bytes = await request.body()
             if body_bytes:
@@ -349,7 +349,17 @@ async def api_predict(request: Request):
         arr = np.array(img.convert("RGB"))
         
         results = process_image_array(arr)
-        return {"success": True, "results": results}
+        
+        # 額外提供 Thunkable 常用的 label 與 diagnosis 頂層欄位，徹底解決找不到標籤的問題
+        primary_status = results[0].get("status", "unknown") if results else "unknown"
+        primary_advice = results[0].get("advice", "No diagnosis label found.") if results else "No advice."
+        
+        return {
+            "success": True,
+            "label": primary_status,
+            "diagnosis": primary_advice,
+            "results": results
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
