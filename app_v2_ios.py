@@ -6,9 +6,8 @@ import numpy as np
 from PIL import Image, ImageOps
 from torchvision import transforms
 import gradio as gr
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 import base64
 import uvicorn
 import io
@@ -294,7 +293,7 @@ with gr.Blocks(title="Tomato Disease Report v2") as demo:
 
 
 # ==========================================
-# 5. FastAPI Integration & App Launch (支援 Thunkable JSON Base64)
+# 5. FastAPI Integration (終極萬用接收端點：同時支援 JSON 與檔案上傳)
 # ==========================================
 app = FastAPI()
 
@@ -306,17 +305,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class ImagePayload(BaseModel):
-    image: str  # 接收來自 Thunkable 的 Base64 圖片字串
-
 @app.post("/api/predict")
-async def api_predict(payload: ImagePayload):
+async def api_predict(request: Request):
     try:
-        image_data = payload.image
-        if "," in image_data:
-            image_data = image_data.split(",")[1]
+        content_type = request.headers.get("content-type", "")
+        image_bytes = None
         
-        image_bytes = base64.b64decode(image_data)
+        # 情況 A：接收 JSON (Base64) 格式
+        if "application/json" in content_type:
+            body = await request.json()
+            image_data = body.get("image") or body.get("file") or body.get("data")
+            if image_data:
+                if "," in image_data:
+                    image_data = image_data.split(",")[1]
+                image_bytes = base64.b64decode(image_data)
+                
+        # 情況 B：接收 Multipart 檔案上傳格式
+        elif "multipart/form-data" in content_type:
+            form = await request.form()
+            file = form.get("file") or form.get("image")
+            if file:
+                image_bytes = await file.read()
+                
+        # 情況 C：保險預備（萬一 headers 沒對到，直接嘗試解析 body）
+        if not image_bytes:
+            body_bytes = await request.body()
+            if body_bytes:
+                try:
+                    data = json.loads(body_bytes)
+                    image_data = data.get("image") or data.get("file")
+                    if image_data:
+                        if "," in image_data: image_data = image_data.split(",")[1]
+                        image_bytes = base64.b64decode(image_data)
+                except:
+                    image_bytes = body_bytes
+
+        if not image_bytes:
+            return {"success": False, "error": "No valid image data found in request."}
+        
         img = Image.open(io.BytesIO(image_bytes))
         img = ImageOps.exif_transpose(img)
         img.thumbnail((MAX_INPUT_SIDE, MAX_INPUT_SIDE))
