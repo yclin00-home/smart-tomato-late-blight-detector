@@ -25,10 +25,6 @@ print(f"💻 Inference Device: {device}")
 # 1. Load Specific Best Models (Optimized for Render RAM)
 # ==========================================
 def load_specific_model(prefix, specific_filename, classes_json):
-    """
-    載入指定的單一最佳模型權重與類別標籤，
-    避免在 Render 免費方案中因同時載入多個模型而導致記憶體爆炸 (OOM)。
-    """
     if not os.path.exists(classes_json):
         raise FileNotFoundError(f"Cannot find class file: {classes_json}")
     
@@ -42,11 +38,8 @@ def load_specific_model(prefix, specific_filename, classes_json):
     m = timm.create_model(MODEL_NAME, pretrained=False, num_classes=len(names))
     m.load_state_dict(torch.load(specific_filename, map_location=device))
     m.eval()
-    
-    # 包成串列格式以相容後續推論邏輯
     return [m], names
 
-# 載入您指定的 v2 雙階段最佳模型
 models1, names1 = load_specific_model("m1_tomato_v2", "m1_tomato_v2_top1_ep25.pth", "m1_classes_v2.json")
 models2, names2 = load_specific_model("m2_late_blight_v2", "m2_late_blight_v2_top1_ep22.pth", "m2_classes_v2.json")
 
@@ -57,7 +50,6 @@ inf_tf = transforms.Compose([
 ])
 
 def predict_single(models, names, x):
-    """使用單一模型進行前向傳播預測"""
     with torch.no_grad():
         p = torch.softmax(models[0](x)[0], dim=0)
     return {n: float(p[i]) for i, n in enumerate(names)}
@@ -142,7 +134,7 @@ def calc_infection_ratio(img_rgb):
 
 
 # ==========================================
-# 3. Comprehensive Report Rendering (Vertical Line Indicator)
+# 3. Comprehensive Report Rendering (使用自訂 CSS Class)
 # ==========================================
 def render_multi_report(analyzed_results):
     html_cards = ""
@@ -155,7 +147,7 @@ def render_multi_report(analyzed_results):
             status_color = "#a93226"
             r_val = max(0.0, min(100.0, ratio))
             slider_html = f"""
-                <div style="margin-top: 10px; font-size: 16px; font-weight: bold; color: #a93226;">
+                <div style="margin-top: 10px; font-size: 16px; font-weight: bold; color: #a93226 !important;">
                     📉 Severity Score: [{r_val:.1f}%]
                 </div>
                 <div style="position: relative; margin-top: 10px; margin-bottom: 20px;">
@@ -165,7 +157,7 @@ def render_multi_report(analyzed_results):
                         <div style="background-color: #c0392b; flex: 1;" title="Severe (>66.6%)"></div>
                     </div>
                     <div style="position: absolute; top: -3px; bottom: -3px; left: {r_val}%; width: 3px; background-color: #111111; transform: translateX(-50%); z-index: 5; box-shadow: 0 0 3px rgba(255,255,255,0.8);"></div>
-                    <div style="position: absolute; top: 18px; left: {r_val}%; transform: translateX(-50%); font-size: 12px; font-weight: bold; color: #111111; background: rgba(255,255,255,0.9); padding: 0 4px; border: 1px solid #b5b0a5; border-radius: 3px; white-space: nowrap;">
+                    <div style="position: absolute; top: 18px; left: {r_val}%; transform: translateX(-50%); font-size: 12px; font-weight: bold; color: #111111 !important; background: rgba(255,255,255,0.9); padding: 0 4px; border: 1px solid #b5b0a5; border-radius: 3px; white-space: nowrap;">
                         {r_val:.1f}%
                     </div>
                 </div>
@@ -174,13 +166,16 @@ def render_multi_report(analyzed_results):
             status_color = "#1e8449" if status == "tomato-without-late-blight" else "#555555"
             slider_html = ""
 
+        # 套用 .custom-report-card 確保深淺色模式字體皆清晰可見
         html_cards += f"""
-        <div style="background-color: #f4f1ea; border: 2px solid #dcd6cd; border-radius: 10px; padding: 15px; margin-bottom: 12px; font-family: Arial;">
-            <div style="font-size: 16px; font-weight: bold; color: {status_color};">
+        <div class="custom-report-card">
+            <div style="font-size: 16px !important; font-weight: bold !important; color: {status_color} !important;">
                 🌿 Leaf #{idx} — DIAGNOSIS STATUS: [{status.upper()}]
             </div>
             {slider_html}
-            <div style="margin-top: 8px; font-size: 15px; line-height: 1.5;">{msg}</div>
+            <div style="margin-top: 8px !important; font-size: 15px !important; line-height: 1.6 !important;">
+                {msg}
+            </div>
         </div>
         """
     return html_cards
@@ -271,7 +266,7 @@ def diagnose(image_path):
 
 
 # ==========================================
-# 5. Launch Gradio Web Interface (Render Port Support)
+# 5. Launch Gradio Web Interface (加入全局強制色 CSS)
 # ==========================================
 port = int(os.environ.get("PORT", 7860))
 
@@ -293,6 +288,22 @@ with gr.Blocks(title="Tomato Disease Report v2 (English)") as demo:
     btn.click(diagnose, inputs=[image_input],
               outputs=[outlines_output, lesion_output, report_output])
 
-    
+    # 透過全域 CSS 強制覆蓋卡片內文字顏色，避免在 Gradio 深色模式下字體隱形
+    gr.HTML("""
+    <style>
+        .custom-report-card {
+            background-color: #f4f1ea !important;
+            border: 2px solid #dcd6cd !important;
+            border-radius: 10px !important;
+            padding: 15px !important;
+            margin-bottom: 12px !important;
+            font-family: Arial, sans-serif !important;
+        }
+        .custom-report-card, .custom-report-card *, .custom-report-card span, .custom-report-card b {
+            color: #2c2c2c !important;
+        }
+    </style>
+    """)
+
 if __name__ == "__main__":
     demo.launch(server_name="0.0.0.0", server_port=port, share=False)
