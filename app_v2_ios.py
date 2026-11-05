@@ -7,6 +7,8 @@ from PIL import Image, ImageOps
 from torchvision import transforms
 import gradio as gr
 from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
 import uvicorn
 import io
 
@@ -295,10 +297,23 @@ with gr.Blocks(title="Tomato Disease Report v2") as demo:
 # ==========================================
 app = FastAPI()
 
+# 啟用 CORS 跨網域設定，徹底解決 Failed to fetch 問題
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 @app.post("/api/predict")
-async def api_predict(file: UploadFile = File(...)):
+async def api_predict(file: Optional[UploadFile] = File(None), image: Optional[UploadFile] = File(None)):
+    target_file = file if file else image
+    if not target_file:
+        return {"success": False, "error": "No image file provided in request."}
+    
     try:
-        image_bytes = await file.read()
+        image_bytes = await target_file.read()
         img = Image.open(io.BytesIO(image_bytes))
         img = ImageOps.exif_transpose(img)
         img.thumbnail((MAX_INPUT_SIDE, MAX_INPUT_SIDE))
