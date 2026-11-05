@@ -6,9 +6,10 @@ import numpy as np
 from PIL import Image, ImageOps
 from torchvision import transforms
 import gradio as gr
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional
+from pydantic import BaseModel
+import base64
 import uvicorn
 import io
 
@@ -293,11 +294,10 @@ with gr.Blocks(title="Tomato Disease Report v2") as demo:
 
 
 # ==========================================
-# 5. FastAPI Integration & App Launch
+# 5. FastAPI Integration & App Launch (支援 Thunkable JSON Base64)
 # ==========================================
 app = FastAPI()
 
-# 啟用 CORS 跨網域設定，徹底解決 Failed to fetch 問題
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -306,14 +306,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class ImagePayload(BaseModel):
+    image: str  # 接收來自 Thunkable 的 Base64 圖片字串
+
 @app.post("/api/predict")
-async def api_predict(file: Optional[UploadFile] = File(None), image: Optional[UploadFile] = File(None)):
-    target_file = file if file else image
-    if not target_file:
-        return {"success": False, "error": "No image file provided in request."}
-    
+async def api_predict(payload: ImagePayload):
     try:
-        image_bytes = await target_file.read()
+        image_data = payload.image
+        if "," in image_data:
+            image_data = image_data.split(",")[1]
+        
+        image_bytes = base64.b64decode(image_data)
         img = Image.open(io.BytesIO(image_bytes))
         img = ImageOps.exif_transpose(img)
         img.thumbnail((MAX_INPUT_SIDE, MAX_INPUT_SIDE))
