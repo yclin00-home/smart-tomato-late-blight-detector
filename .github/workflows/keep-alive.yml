@@ -1,10 +1,11 @@
-name: Keep Render Alive
+name: Keep Render Alive (California Daytime)
 
 on:
   schedule:
-    # 每 13 分鐘自動執行一次，防止 Render 進入 15 分鐘休眠
-    - cron: '*/13 * * * *'
-  workflow_dispatch: # 允許您在網頁手動點擊按鈕測試
+    # 加州時間 06:00 到 22:00（對應 UTC 時間 14:00 到 06:00）
+    # 每 13 分鐘執行一次
+    - cron: '*/13 14-6 * * *'
+  workflow_dispatch:
 
 jobs:
   ping:
