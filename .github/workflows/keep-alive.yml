@@ -12,4 +12,4 @@ jobs:
     steps:
       - name: Send HTTP request to Render
         run: |
-          curl -I https://smart-tomato-late-blight-detector.onrender.com/
+          curl -I "https://smart-tomato-late-blight-detector.onrender.com/"
