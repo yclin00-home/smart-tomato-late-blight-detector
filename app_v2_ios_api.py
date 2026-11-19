@@ -260,13 +260,13 @@ def diagnose(image_path):
     return vis, lesion_output_vis, html_cards
 
 with gr.Blocks(title="Tomato Disease Report v2") as demo:
-    gr.Markdown("# 🍅 Tomato Late Blight Intelligent Diagnosis System")
-    gr.Markdown("Upload an image to automatically outline true leaf contours and review detailed confidence scores.")
+    gr.Markdown("# 🍅 Tomato Late Blight Detection System")
+    gr.Markdown("Upload an image to determine if the leaf has the late blight and review detailed information.")
     
     with gr.Row():
         image_input = gr.Image(type="filepath", label="Upload Test Image")
         
-    btn = gr.Button("🔍 Start Precision Diagnosis", variant="primary")
+    btn = gr.Button("🔍 Start Diagnosis", variant="primary")
     
     with gr.Row():
         outlines_output = gr.Image(label="1. True Leaf Edge Outlines")
