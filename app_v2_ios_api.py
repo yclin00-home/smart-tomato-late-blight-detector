@@ -261,7 +261,7 @@ def diagnose(image_path):
 
 with gr.Blocks(title="Tomato Disease Report v2") as demo:
     gr.Markdown("# 🍅 Tomato Late Blight Detection System")
-    gr.Markdown("Upload an image to determine if the leaf has the late blight and review detailed information.")
+    gr.Markdown("Upload an image to determine if the leaf has late blight and review detailed information")
     
     with gr.Row():
         image_input = gr.Image(type="filepath", label="Upload Test Image")
